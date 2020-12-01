@@ -67,6 +67,10 @@ pub trait Trait: frame_system::Trait + pallet_timestamp::Trait {
     type AdminRole: Get<AccountRole>;
 }
 
+// Storage, Events, Errors are declared using rust macros
+// How to use macros see
+// https://substrate.dev/docs/en/knowledgebase/runtime/macros
+
 // The pallet's runtime storage items.
 // https://substrate.dev/docs/en/knowledgebase/runtime/storage
 decl_storage! {
@@ -100,10 +104,12 @@ decl_event!(
         AccountCreated(AccountId, AccountId, AccountRole),
         /// Account has been disabled [who, account]
         AccountDisabled(AccountId, AccountId),
+        // add other events here
     }
 );
 
 // Errors inform users that something went wrong.
+// learn more https://substrate.dev/docs/en/knowledgebase/runtime/errors
 decl_error! {
     pub enum Error for Module<T: Trait> {
         /// Error names should be descriptive.
@@ -114,7 +120,6 @@ decl_error! {
         NotAuthorized,
         /// Account doesn't exist
         NotExists,
-
         // add additional errors below
     }
 }
@@ -155,6 +160,7 @@ decl_module! {
             Ok(())
         }
 
+        /// https://substrate.dev/docs/en/knowledgebase/runtime/fees
         #[weight = 10_000 + T::DbWeight::get().reads_writes(1,1)]
         pub fn account_disable(origin, whom: T::AccountId) -> dispatch::DispatchResult {
             let who = ensure_signed(origin)?;
