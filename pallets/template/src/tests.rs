@@ -1,7 +1,8 @@
 use crate::mock::*;
 use frame_support::{assert_noop, assert_ok};
-
-//type Module = super::Module<Test>;
+// Learn more about testing substrate runtime modules
+// https://substrate.dev/docs/en/knowledgebase/runtime/tests
+// type Module = super::Module<Test>;
 type Timestamp = pallet_timestamp::Module<Test>;
 type System = frame_system::Module<Test>;
 type Error = super::Error<Test>;
