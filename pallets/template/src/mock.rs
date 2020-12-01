@@ -1,0 +1,149 @@
+use crate::{Module, Trait};
+use frame_support::{impl_outer_event, impl_outer_origin, parameter_types, weights::Weight};
+use frame_system as system;
+use sp_core::H256;
+use sp_runtime::{
+    testing::Header,
+    traits::{BlakeTwo256, IdentityLookup},
+    Perbill,
+};
+
+impl_outer_origin! {
+    pub enum Origin for Test {}
+}
+mod template {
+    pub use crate::Event;
+}
+mod balance {
+    pub use pallet_balances::Event;
+}
+
+impl_outer_event! {
+    pub enum Event for Test {
+        system<T>,
+        template<T>,
+        balance<T>,
+    }
+}
+
+// Configure a mock runtime to test the pallet.
+pub const MILLISECS_PER_BLOCK: u64 = 6000;
+pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
+pub type Balance = u64;
+pub type System = system::Module<Test>;
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct Test;
+parameter_types! {
+    pub const BlockHashCount: u64 = 250;
+    pub const MaximumBlockWeight: Weight = 1024;
+    pub const MaximumBlockLength: u32 = 2 * 1024;
+    pub const AvailableBlockRatio: Perbill = Perbill::from_percent(75);
+}
+
+impl system::Trait for Test {
+    type BaseCallFilter = ();
+    type Origin = Origin;
+    type Call = ();
+    type Index = u64;
+    type BlockNumber = u64;
+    type Hash = H256;
+    type Hashing = BlakeTwo256;
+    type AccountId = u64;
+    type Lookup = IdentityLookup<Self::AccountId>;
+    type Header = Header;
+    type Event = Event;
+    type BlockHashCount = BlockHashCount;
+    type MaximumBlockWeight = MaximumBlockWeight;
+    type DbWeight = ();
+    type BlockExecutionWeight = ();
+    type ExtrinsicBaseWeight = ();
+    type MaximumExtrinsicWeight = MaximumBlockWeight;
+    type MaximumBlockLength = MaximumBlockLength;
+    type AvailableBlockRatio = AvailableBlockRatio;
+    type Version = ();
+    type PalletInfo = ();
+    type AccountData = pallet_balances::AccountData<Balance>;
+    type OnNewAccount = ();
+    type OnKilledAccount = ();
+    type SystemWeightInfo = ();
+}
+
+parameter_types! {
+    pub const MinimumPeriod: u64 = SLOT_DURATION / 2;
+}
+
+impl pallet_timestamp::Trait for Test {
+    /// A timestamp: milliseconds since the unix epoch.
+    type Moment = u64;
+    type OnTimestampSet = ();
+    type MinimumPeriod = MinimumPeriod;
+    type WeightInfo = ();
+}
+
+// Assign module constant values
+parameter_types! {
+    pub const AdminRole: super::AccountRole = super::ADMIN_ROLE;
+}
+
+impl Trait for Test {
+    type Event = Event;
+    type AdminRole = AdminRole;
+}
+
+parameter_types! {
+    pub const MaxLocks: u32 = 50;
+    pub const ExistentialDeposit: u64 = 0;
+}
+
+impl pallet_balances::Trait for Test {
+    type Balance = Balance;
+    type Event = Event;
+    type DustRemoval = ();
+    type ExistentialDeposit = ExistentialDeposit;
+    type AccountStore = System;
+    type WeightInfo = ();
+    type MaxLocks = MaxLocks;
+}
+
+pub type TemplateModule = Module<Test>;
+pub type Account = super::AccountOf<Test>;
+
+static INITIAL: [(<Test as system::Trait>::AccountId, super::AccountRole); 1] =
+    [(1, super::ADMIN_ROLE)];
+
+static INITIAL_BALANCE: <Test as pallet_balances::Trait>::Balance = 100000;
+
+// Build genesis storage according to the mock runtime.
+pub fn new_test_ext() -> sp_io::TestExternalities {
+    let mut storage = system::GenesisConfig::default()
+        .build_storage::<Test>()
+        .unwrap();
+
+    pallet_balances::GenesisConfig::<Test> {
+        // Provide some initial balances
+        balances: INITIAL.iter().map(|x| (x.0, INITIAL_BALANCE)).collect(),
+    }
+    .assimilate_storage(&mut storage)
+    .unwrap();
+
+    super::GenesisConfig::<Test> {
+        // First account is admin
+        genesis_account_registry: INITIAL
+            .iter()
+            .map(|(acc, role)| {
+                (
+                    *acc,
+                    Account {
+                        roles: *role,
+                        create_time: 0,
+                    },
+                )
+            })
+            .collect(),
+    }
+    .assimilate_storage(&mut storage)
+    .unwrap();
+
+    storage.into()
+}
