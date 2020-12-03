@@ -4,38 +4,53 @@ use serde::{Deserialize, Serialize};
 
 use frame_support::{
     codec::{Decode, Encode},
-    decl_error, decl_event, decl_module, decl_storage, dispatch, ensure,
-    sp_runtime::traits::AtLeast32Bit,
+    debug, decl_error, decl_event, decl_module, decl_storage, dispatch, ensure,
+    sp_runtime::{
+        sp_std::ops::BitAnd,
+        traits::{AtLeast32Bit, Zero},
+    },
     traits::Get,
+    weights::{DispatchClass, Pays},
+    Parameter,
 };
 use frame_system::ensure_signed;
 
 #[cfg(test)]
 mod mock;
-
+#[cfg(feature = "payment")]
+mod payment;
 #[cfg(test)]
 mod tests;
 
-/// Change role type if requires more than 8 distinct values
-pub type AccountRole = u8;
+pub mod prelude {
+    #[cfg(feature = "payment")]
+    pub use crate::payment::IdentityMultiplierUpdater;
+}
+
 /// Structure, specific for each role
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 #[derive(Encode, Decode, Clone, Default)]
-pub struct Account<Moment> {
+pub struct Account<Moment, AccountRole> {
     pub roles: AccountRole,
     pub create_time: Moment,
 }
 
-impl<Moment> Account<Moment> {
+impl<
+        Moment: Default + AtLeast32Bit + Copy,
+        AccountRole: Zero + From<u8> + PartialOrd + Copy + BitAnd<Output = AccountRole>,
+    > Account<Moment, AccountRole>
+{
     pub fn is_admin(&self) -> bool {
-        self.roles & ADMIN_ROLE == ADMIN_ROLE
+        !(self.roles & ADMIN_ROLE.into()).is_zero()
     }
     pub fn is_enable(&self) -> bool {
-        self.roles > 0
+        !self.roles.is_zero()
     }
-}
-// implement type-specific methods
-impl<Moment: Default + AtLeast32Bit + Copy> Account<Moment> {
+
+    pub fn is_role_correct(role: AccountRole) -> bool {
+        role <= ALL_ROLES.into()
+    }
+
     #[allow(dead_code)]
     pub fn age(&self, now: Moment) -> Moment {
         now - self.create_time
@@ -43,29 +58,38 @@ impl<Moment: Default + AtLeast32Bit + Copy> Account<Moment> {
 
     pub fn new_admin() -> Self {
         Account {
-            roles: ADMIN_ROLE,
+            roles: ADMIN_ROLE.into(),
             create_time: Default::default(),
         }
     }
 }
 
-pub type AccountOf<T> = Account<<T as pallet_timestamp::Trait>::Moment>;
-
-/// Account roles . Add additional values if required
-#[allow(dead_code)]
-const NONE_ROLE: AccountRole = 0x00;
-pub const ADMIN_ROLE: AccountRole = 0x01;
-#[allow(dead_code)]
-const USER_ROLE: AccountRole = 0x02;
+pub type AccountOf<T> = Account<<T as pallet_timestamp::Trait>::Moment, <T as Trait>::AccountRole>;
 
 /// Configure the pallet by specifying the parameters and types on which it depends.
-pub trait Trait: frame_system::Trait + pallet_timestamp::Trait {
+pub trait Trait: frame_system::Trait + pallet_timestamp::Trait + pallet_balances::Trait {
     /// Because this pallet emits events, it depends on the runtime's definition of an event.
     type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
     // Describe pallet constants.
     // Lean more https://substrate.dev/docs/en/knowledgebase/runtime/metadata
-    type AdminRole: Get<AccountRole>;
+    type AdminRole: Get<Self::AccountRole>;
+    /// Change  to u16 if it requires more than 8 distinct values
+    type AccountRole: Default
+        + Parameter
+        + PartialOrd
+        + Zero
+        + From<u8>
+        + Copy
+        + BitAnd<Output = Self::AccountRole>;
 }
+
+/// Account roles . Add additional values if required
+#[allow(dead_code)]
+const NONE_ROLE: u8 = 0x00;
+pub const ADMIN_ROLE: u8 = 0x01;
+#[allow(dead_code)]
+const USER_ROLE: u8 = 0x02;
+const ALL_ROLES: u8 = 0x03;
 
 // Storage, Events, Errors are declared using rust macros
 // How to use macros see
@@ -96,6 +120,8 @@ decl_event!(
     pub enum Event<T>
     where
         AccountId = <T as frame_system::Trait>::AccountId,
+        Balance = <T as pallet_balances::Trait>::Balance,
+        AccountRole = <T as Trait>::AccountRole,
     {
         /// Event documentation should end with an array that provides descriptive names for event
         /// parameters. [something, who]
@@ -104,6 +130,8 @@ decl_event!(
         AccountCreated(AccountId, AccountId, AccountRole),
         /// Account has been disabled [who, account]
         AccountDisabled(AccountId, AccountId),
+        /// Lock balance [who, balance]
+        BalanceLocked(AccountId, Balance),
         // add other events here
     }
 );
@@ -116,6 +144,8 @@ decl_error! {
         NoneValue,
         /// Operation is not valid
         InvalidAction,
+        /// Incorrect data provided
+        InvalidData,
         /// Origin do not have sufficient privileges to perform the operation
         NotAuthorized,
         /// Account doesn't exist
@@ -132,27 +162,31 @@ decl_module! {
         // Errors must be initialized if they are used by the pallet.
         type Error = Error<T>;
 
-        // Make module constants visible in metadata
-        const AdminRole: AccountRole = T::AdminRole::get();
+        // Make module constants visible in Node's metadata
+        const AdminRole: T::AccountRole = T::AdminRole::get();
 
         // Events must be initialized if they are used by the pallet.
         fn deposit_event() = default;
 
-        /// An example dispatchable that takes a singles value as a parameter, writes the value to
-        /// storage and emits an event. This function must be dispatched by a signed extrinsic.
-        #[weight = 10_000 + T::DbWeight::get().writes(1)]
-        pub fn account_add(origin, account: T::AccountId, role: AccountRole) -> dispatch::DispatchResult {
+        /// Create or update an entry in account registry with specific role.
+        #[weight = 10_000_000 + T::DbWeight::get().writes(1)]
+        pub fn account_add(origin, account: T::AccountId, role: T::AccountRole) -> dispatch::DispatchResult {
             // Check that the extrinsic was signed and get the signer.
             // This function will return an error if the extrinsic is not signed.
             // https://substrate.dev/docs/en/knowledgebase/runtime/origin
             let who = ensure_signed(origin)?;
+            ensure!(AccountOf::<T>::is_role_correct(role), Error::<T>::InvalidData);
             ensure!(Self::account_is_admin(&who), Error::<T>::NotAuthorized);
-            // Get current timestamp using pallet-timestamp module
-            let now = <pallet_timestamp::Module<T>>::get();
+
             // Update storage.
-            AccountRegistry::<T>::insert(&account,
-                Account { roles: role, create_time: now }
-            );
+            AccountRegistry::<T>::mutate(&account, |acc|{
+                debug::info!("account_add: roles={:?} create_time={:?}", acc.roles, acc.create_time);
+                acc.roles = role;
+                if acc.create_time.is_zero(){
+                    // Get current timestamp using pallet-timestamp module
+                    acc.create_time = <pallet_timestamp::Module<T>>::get();
+                }
+            });
 
             // Emit an event.
             Self::deposit_event(RawEvent::AccountCreated(who, account, role));
@@ -160,8 +194,17 @@ decl_module! {
             Ok(())
         }
 
+        /// Disable account entry by removing it from registry.
+        /// Transaction fee for this dispatchable is made up from 3 parts.
+        /// 1. base_part. is set by  frame-system::ExtrinsicBaseWeight (default value is 125000000)
+        ///    together with pallet-transaction-payment::WeightToFee converter.
+        ///    The default WeightToFee implementation is IdentityFee that makes one to one conversion.
+        /// 2. tx length part. is set by  pallet-transaction-payment::TransactionByteFee. default value is 1
+        ///    Each intrinsic byte give us 1 weight.
+        /// 3. weight part. is set by pallet-transaction-payment::WeightToFee  and
+        ///    pallet-transaction-payment::FeeMultiplierUpdate  implementations
         /// https://substrate.dev/docs/en/knowledgebase/runtime/fees
-        #[weight = 10_000 + T::DbWeight::get().reads_writes(1,1)]
+        #[weight = 10_000_000 + T::DbWeight::get().reads_writes(1,1)]
         pub fn account_disable(origin, whom: T::AccountId) -> dispatch::DispatchResult {
             let who = ensure_signed(origin)?;
             // Ensure origin has associated account with admin privileges.
@@ -180,9 +223,25 @@ decl_module! {
             Ok(())
         }
 
+        /// An example dispatchable that demonstrates `pallet_balances` capability to  froze
+        /// account balance for specific purpose.
+        /// After `account_balance_lock` was called the account can be put his balance only to pay off fees.
+        #[weight = 10_000 + T::DbWeight::get().reads_writes(1,1)]
+        pub fn account_balance_lock(origin, whom: T::AccountId) -> dispatch::DispatchResult {
+            let who = ensure_signed(origin)?;
+            // Ensure origin has associated account with admin privileges.
+            ensure!(Self::account_is_admin(&who), Error::<T>::NotAuthorized);
+            <pallet_balances::Module<T>>::mutate_account(&whom, |acc_data|->dispatch::DispatchResult{
+                acc_data.misc_frozen = acc_data.free;
+                Self::deposit_event(RawEvent::BalanceLocked(whom.clone(), acc_data.misc_frozen));
+                Ok(())
+            })
+        }
+
         /// An example dispatchable that takes a singles value as a parameter, writes the value to
         /// storage and emits an event. This function must be dispatched by a signed extrinsic.
-        #[weight = 10_000 + T::DbWeight::get().writes(1)]
+        /// Origin doesn't pay fee for this transaction and can call it with zero balance.
+        #[weight = (10_000_000, DispatchClass::Normal, Pays::No)]
         pub fn do_something(origin, something: u32) -> dispatch::DispatchResult {
             // Check that the extrinsic was signed and get the signer.
             // This function will return an error if the extrinsic is not signed.
@@ -191,17 +250,43 @@ decl_module! {
 
             // Update storage.
             Something::put(something);
-
+            debug::info!("do_something: who={:?} what={:?}", who, something);
             // Emit an event.
             Self::deposit_event(RawEvent::SomethingStored(something, who));
             // Return a successful DispatchResult
             Ok(())
         }
 
+        /// An example dispatchable that can require various fee depends of runtime logic.
+        /// On increase storage value it requires standard fee value.
+        /// On decrease origin doesn't have to pay fee.
+        /// See more about fees https://substrate.dev/docs/en/knowledgebase/runtime/fees.
+        #[weight = 10_000_000]
+        pub fn update_something(origin, something: u32) -> dispatch::DispatchResultWithPostInfo{
+            let who = ensure_signed(origin)?;
+            ensure!(Self::account_is_admin(&who), Error::<T>::NotAuthorized);
+            Something::try_mutate(|v|->dispatch::DispatchResultWithPostInfo{
+                let res = match v {
+                    // disable pay
+                    Some(ref prev) if *prev>something => (Pays::No).into(),
+                    // default weight and pay value
+                    _ => None.into(),
+                };
+                *v = Some(something);
+                // Event emission should be perform after the storage has been updated.
+                // Here we can ensure that update will succeed.
+                Self::deposit_event(RawEvent::SomethingStored(something, who));
+                Ok(res)
+            })
+        }
+
     }
 }
-
+// Module allows the pallet's dispatchable use  common functionality
 impl<T: Trait> Module<T> {
+    // Implement module function.
+    // Public functions can be called from other runtime modules.
+    /// Check if an account has ADMIN role
     pub fn account_is_admin(acc: &T::AccountId) -> bool {
         AccountRegistry::<T>::get(acc).is_admin()
     }

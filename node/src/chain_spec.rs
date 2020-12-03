@@ -1,6 +1,6 @@
 use node_template_runtime::{
     AccountId, AuraConfig, BalancesConfig, GenesisConfig, GrandpaConfig, Signature, SudoConfig,
-    SystemConfig, TemplateAccount, TemplateModuleConfig, WASM_BINARY,
+    SystemConfig, TemplateAccount, TemplateModuleConfig, TransactionPaymentConfig, WASM_BINARY,
 };
 use sc_service::ChainType;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -170,5 +170,6 @@ fn testnet_genesis(
                 .into_iter()
                 .collect(),
         }),
+        pallet_transaction_payment: Some(TransactionPaymentConfig {}),
     }
 }

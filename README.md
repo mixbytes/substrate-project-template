@@ -77,7 +77,11 @@ version 2.0.  To build the project it requires rust nightly-2020-10-05 and wasm3
    ```bash
    ./target/release/node-template --dev
    ```
-   see other command line options by running
+    Detailed logs may be shown by running the node with the following environment variables set:
+    ```bash
+    RUST_LOG=debug RUST_BACKTRACE=1 cargo run -- --dev
+    ```
+   Other CLI options available
    ```bash
    ./target/release/node-template -h
    ```
