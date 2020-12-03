@@ -46,7 +46,6 @@ impl<
     pub fn is_enable(&self) -> bool {
         !self.roles.is_zero()
     }
-
     pub fn is_role_correct(role: AccountRole) -> bool {
         role <= ALL_ROLES.into()
     }
@@ -123,8 +122,8 @@ decl_event!(
         Balance = <T as pallet_balances::Trait>::Balance,
         AccountRole = <T as Trait>::AccountRole,
     {
-        /// Event documentation should end with an array that provides descriptive names for event
-        /// parameters. [something, who]
+        // Event documentation should end with an array that provides descriptive names for event parameters.
+        /// Something store value has been updated. [value, who]
         SomethingStored(u32, AccountId),
         /// New account has been created [who, account, role]
         AccountCreated(AccountId, AccountId, AccountRole),
@@ -211,7 +210,7 @@ decl_module! {
             ensure!(Self::account_is_admin(&who), Error::<T>::NotAuthorized);
             // Self disabling is prohibited.
             ensure!(who != whom, Error::<T>::InvalidAction);
-            // Raise error if account doesn't exist or has been disabled already.
+            // Raise error if the account doesn't exist or has been disabled already.
             ensure!(AccountRegistry::<T>::contains_key(&whom), Error::<T>::NotExists);
             // Delete a value from storage.
             AccountRegistry::<T>::remove(&whom);
