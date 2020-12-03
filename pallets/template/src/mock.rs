@@ -1,5 +1,8 @@
 use crate::{Module, Trait};
-use frame_support::{impl_outer_event, impl_outer_origin, parameter_types, weights::Weight};
+use frame_support::{
+    impl_outer_event, impl_outer_origin, parameter_types,
+    weights::{constants::RocksDbWeight, Weight},
+};
 use frame_system as system;
 use sp_core::H256;
 use sp_runtime::{
@@ -29,7 +32,7 @@ impl_outer_event! {
 // Configure a mock runtime to test the pallet.
 pub const MILLISECS_PER_BLOCK: u64 = 6000;
 pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
-pub type Balance = u64;
+pub type Balance = u128;
 pub type System = system::Module<Test>;
 
 #[derive(Clone, Eq, PartialEq)]
@@ -55,7 +58,7 @@ impl system::Trait for Test {
     type Event = Event;
     type BlockHashCount = BlockHashCount;
     type MaximumBlockWeight = MaximumBlockWeight;
-    type DbWeight = ();
+    type DbWeight = RocksDbWeight;
     type BlockExecutionWeight = ();
     type ExtrinsicBaseWeight = ();
     type MaximumExtrinsicWeight = MaximumBlockWeight;
@@ -83,17 +86,18 @@ impl pallet_timestamp::Trait for Test {
 
 // Assign module constant values
 parameter_types! {
-    pub const AdminRole: super::AccountRole = super::ADMIN_ROLE;
+    pub const AdminRole: u8 = super::ADMIN_ROLE;
 }
 
 impl Trait for Test {
     type Event = Event;
     type AdminRole = AdminRole;
+    type AccountRole = u8;
 }
 
 parameter_types! {
     pub const MaxLocks: u32 = 50;
-    pub const ExistentialDeposit: u64 = 0;
+    pub const ExistentialDeposit: u64 = 100;
 }
 
 impl pallet_balances::Trait for Test {
@@ -106,11 +110,26 @@ impl pallet_balances::Trait for Test {
     type MaxLocks = MaxLocks;
 }
 
+// pub type Balances = pallet_balances::Module<Test>;
+// parameter_types! {
+//     pub const TransactionByteFee: Balance = 1;
+// }
+//
+// impl pallet_transaction_payment::Trait for Test {
+//     type Currency = Balances;
+//     type OnTransactionPayment = ();
+//     type TransactionByteFee = TransactionByteFee;
+//     type WeightToFee = IdentityFee<Balance>;
+//     type FeeMultiplierUpdate = ();
+// }
+
 pub type TemplateModule = Module<Test>;
 pub type Account = super::AccountOf<Test>;
 
-static INITIAL: [(<Test as system::Trait>::AccountId, super::AccountRole); 1] =
-    [(1, super::ADMIN_ROLE)];
+static INITIAL: [(
+    <Test as system::Trait>::AccountId,
+    <Test as super::Trait>::AccountRole,
+); 1] = [(1, super::ADMIN_ROLE)];
 
 static INITIAL_BALANCE: <Test as pallet_balances::Trait>::Balance = 100000;
 

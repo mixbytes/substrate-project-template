@@ -9,7 +9,7 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 use pallet_grandpa::fg_primitives;
 use pallet_grandpa::{AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList};
-use pallet_template::{AccountOf, AccountRole, ADMIN_ROLE};
+use pallet_template::{prelude::IdentityMultiplierUpdater, AccountOf, ADMIN_ROLE};
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
@@ -257,7 +257,8 @@ impl pallet_transaction_payment::Trait for Runtime {
     type OnTransactionPayment = ();
     type TransactionByteFee = TransactionByteFee;
     type WeightToFee = IdentityFee<Balance>;
-    type FeeMultiplierUpdate = ();
+    // default type is () that make multiplier equal to 0 and turn off WeightToFee conversion
+    type FeeMultiplierUpdate = IdentityMultiplierUpdater;
 }
 
 impl pallet_sudo::Trait for Runtime {
@@ -267,13 +268,14 @@ impl pallet_sudo::Trait for Runtime {
 
 // Configure pallet constants
 parameter_types! {
-    pub const AdminRole: AccountRole = ADMIN_ROLE;
+    pub const AdminRole: u8 = ADMIN_ROLE;
 }
 
 /// Configure the template pallet in pallets/template.
 impl pallet_template::Trait for Runtime {
     type Event = Event;
     type AdminRole = AdminRole;
+    type AccountRole = u8;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -289,7 +291,7 @@ construct_runtime!(
         Aura: pallet_aura::{Module, Config<T>, Inherent},
         Grandpa: pallet_grandpa::{Module, Call, Storage, Config, Event},
         Balances: pallet_balances::{Module, Call, Storage, Config<T>, Event<T>},
-        TransactionPayment: pallet_transaction_payment::{Module, Storage},
+        TransactionPayment: pallet_transaction_payment::{Module, Storage, Config},
         Sudo: pallet_sudo::{Module, Call, Config<T>, Storage, Event<T>},
         // Include the custom logic from the template pallet in the runtime.
         TemplateModule: pallet_template::{Module, Call, Storage, Config<T>, Event<T>},
