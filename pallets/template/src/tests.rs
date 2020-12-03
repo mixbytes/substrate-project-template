@@ -3,7 +3,7 @@ use frame_support::{
     assert_noop, assert_ok,
     dispatch::{DispatchInfo, DispatchResultWithPostInfo, GetDispatchInfo},
     traits::UnfilteredDispatchable,
-    weights::{constants::RocksDbWeight, Pays, Weight},
+    weights::{Pays, Weight},
 };
 
 // Learn more about testing substrate runtime modules
@@ -176,6 +176,7 @@ fn it_balance() {
 
 #[test]
 fn it_dispatchable_weight() {
+    type DbWeight = <Test as frame_system::Trait>::DbWeight;
     // pre-dispatch weights
     fn assert_dispatch(call: crate::Call<Test>, weight: Weight, pay: Pays) -> DispatchInfo {
         let dispatch_info = call.get_dispatch_info();
@@ -185,7 +186,7 @@ fn it_dispatchable_weight() {
         dispatch_info
     }
     let call = crate::Call::<Test>::account_add(3, 1);
-    assert_dispatch(call, 10_000_000 + RocksDbWeight::get().writes(1), Pays::Yes);
+    assert_dispatch(call, 10_000_000 + DbWeight::get().writes(1), Pays::Yes);
 
     let call = crate::Call::<Test>::update_something(3);
     assert_dispatch(call, 10_000_000, Pays::Yes);
@@ -219,7 +220,7 @@ fn it_dispatchable_weight() {
         assert_ok!(assert_call(
             Origin::signed(1),
             call,
-            10000000 + RocksDbWeight::get().writes(1),
+            10000000 + DbWeight::get().writes(1),
             Pays::Yes
         ));
 
@@ -227,7 +228,7 @@ fn it_dispatchable_weight() {
         assert_ok!(assert_call(
             Origin::signed(1),
             call,
-            10000000 + RocksDbWeight::get().reads_writes(1, 1),
+            10000000 + DbWeight::get().reads_writes(1, 1),
             Pays::Yes
         ));
 
