@@ -276,6 +276,8 @@ impl pallet_template::Trait for Runtime {
     type Event = Event;
     type AdminRole = AdminRole;
     type AccountRole = u8;
+    type Currency = Balances;
+    type WeightInfo = ();
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.

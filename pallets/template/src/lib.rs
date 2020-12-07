@@ -9,12 +9,16 @@ use frame_support::{
         sp_std::ops::BitAnd,
         traits::{AtLeast32Bit, Zero},
     },
-    traits::Get,
-    weights::{DispatchClass, Pays},
+    traits::{
+        Currency, ExistenceRequirement::AllowDeath, Get, LockIdentifier, LockableCurrency,
+        WithdrawReason, WithdrawReasons,
+    },
+    weights::{DispatchClass, Pays, Weight},
     Parameter,
 };
 use frame_system::ensure_signed;
 
+mod default_weight;
 #[cfg(test)]
 mod mock;
 #[cfg(feature = "payment")]
@@ -37,7 +41,7 @@ pub struct Account<Moment, AccountRole> {
 
 impl<
         Moment: Default + AtLeast32Bit + Copy,
-        AccountRole: Zero + From<u8> + PartialOrd + Copy + BitAnd<Output = AccountRole>,
+        AccountRole: Zero + Copy + From<u8> + BitAnd<Output = AccountRole>,
     > Account<Moment, AccountRole>
 {
     pub fn is_admin(&self) -> bool {
@@ -46,8 +50,8 @@ impl<
     pub fn is_enable(&self) -> bool {
         !self.roles.is_zero()
     }
-    pub fn is_role_correct(role: AccountRole) -> bool {
-        role <= ALL_ROLES.into()
+    pub fn is_role_correct(_role: AccountRole) -> bool {
+        true
     }
 
     #[allow(dead_code)]
@@ -64,9 +68,10 @@ impl<
 }
 
 pub type AccountOf<T> = Account<<T as pallet_timestamp::Trait>::Moment, <T as Trait>::AccountRole>;
+const FEE_LOCK_ID: LockIdentifier = *b"fee lock";
 
 /// Configure the pallet by specifying the parameters and types on which it depends.
-pub trait Trait: frame_system::Trait + pallet_timestamp::Trait + pallet_balances::Trait {
+pub trait Trait: frame_system::Trait + pallet_timestamp::Trait {
     /// Because this pallet emits events, it depends on the runtime's definition of an event.
     type Event: From<Event<Self>> + Into<<Self as frame_system::Trait>::Event>;
     // Describe pallet constants.
@@ -80,7 +85,19 @@ pub trait Trait: frame_system::Trait + pallet_timestamp::Trait + pallet_balances
         + From<u8>
         + Copy
         + BitAnd<Output = Self::AccountRole>;
+    type Currency: LockableCurrency<Self::AccountId, Moment = Self::BlockNumber>;
+    type WeightInfo: WeightInfo;
 }
+
+pub trait WeightInfo {
+    fn update_something() -> Weight;
+    fn account_transfer_and_lock() -> Weight;
+    fn account_disable() -> Weight;
+    fn account_add() -> Weight;
+}
+
+type BalanceOf<T> =
+    <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
 
 /// Account roles . Add additional values if required
 #[allow(dead_code)]
@@ -88,7 +105,6 @@ const NONE_ROLE: u8 = 0x00;
 pub const ADMIN_ROLE: u8 = 0x01;
 #[allow(dead_code)]
 const USER_ROLE: u8 = 0x02;
-const ALL_ROLES: u8 = 0x03;
 
 // Storage, Events, Errors are declared using rust macros
 // How to use macros see
@@ -119,7 +135,7 @@ decl_event!(
     pub enum Event<T>
     where
         AccountId = <T as frame_system::Trait>::AccountId,
-        Balance = <T as pallet_balances::Trait>::Balance,
+        Balance = BalanceOf<T>,
         AccountRole = <T as Trait>::AccountRole,
     {
         // Event documentation should end with an array that provides descriptive names for event parameters.
@@ -168,7 +184,7 @@ decl_module! {
         fn deposit_event() = default;
 
         /// Create or update an entry in account registry with specific role.
-        #[weight = 10_000_000 + T::DbWeight::get().writes(1)]
+        #[weight = <T as Trait>::WeightInfo::account_add()]
         pub fn account_add(origin, account: T::AccountId, role: T::AccountRole) -> dispatch::DispatchResult {
             // Check that the extrinsic was signed and get the signer.
             // This function will return an error if the extrinsic is not signed.
@@ -203,7 +219,7 @@ decl_module! {
         /// 3. weight part. is set by pallet-transaction-payment::WeightToFee  and
         ///    pallet-transaction-payment::FeeMultiplierUpdate  implementations
         /// https://substrate.dev/docs/en/knowledgebase/runtime/fees
-        #[weight = 10_000_000 + T::DbWeight::get().reads_writes(1,1)]
+        #[weight = <T as Trait>::WeightInfo::account_disable()]
         pub fn account_disable(origin, whom: T::AccountId) -> dispatch::DispatchResult {
             let who = ensure_signed(origin)?;
             // Ensure origin has associated account with admin privileges.
@@ -224,17 +240,24 @@ decl_module! {
 
         /// An example dispatchable that demonstrates `pallet_balances` capability to  froze
         /// account balance for specific purpose.
-        /// After `account_balance_lock` was called the account can be put his balance only to pay off fees.
-        #[weight = 10_000 + T::DbWeight::get().reads_writes(1,1)]
-        pub fn account_balance_lock(origin, whom: T::AccountId) -> dispatch::DispatchResult {
-            let who = ensure_signed(origin)?;
+        /// After `account_transfer_and_lock` was called the account can be put his balance only to pay off fees.
+        #[weight = <T as Trait>::WeightInfo::account_transfer_and_lock()]
+        pub fn account_transfer_and_lock(origin, whom: T::AccountId, amount: BalanceOf<T>) -> dispatch::DispatchResult {
+            let sender = ensure_signed(origin)?;
             // Ensure origin has associated account with admin privileges.
-            ensure!(Self::account_is_admin(&who), Error::<T>::NotAuthorized);
-            <pallet_balances::Module<T>>::mutate_account(&whom, |acc_data|->dispatch::DispatchResult{
-                acc_data.misc_frozen = acc_data.free;
-                Self::deposit_event(RawEvent::BalanceLocked(whom.clone(), acc_data.misc_frozen));
-                Ok(())
-            })
+            ensure!(Self::account_is_admin(&sender), Error::<T>::NotAuthorized);
+
+            T::Currency::transfer(&sender, &whom, amount, AllowDeath)?;
+            let amount = T::Currency::free_balance(&whom);
+            T::Currency::set_lock(
+                FEE_LOCK_ID,
+                &whom,
+                amount,
+                WithdrawReasons::except(WithdrawReason::TransactionPayment),
+            );
+            Self::deposit_event(RawEvent::BalanceLocked(whom, amount));
+
+            Ok(())
         }
 
         /// An example dispatchable that takes a singles value as a parameter, writes the value to
@@ -260,7 +283,7 @@ decl_module! {
         /// On increase storage value it requires standard fee value.
         /// On decrease origin doesn't have to pay fee.
         /// See more about fees https://substrate.dev/docs/en/knowledgebase/runtime/fees.
-        #[weight = 10_000_000]
+        #[weight = <T as Trait>::WeightInfo::update_something()]
         pub fn update_something(origin, something: u32) -> dispatch::DispatchResultWithPostInfo{
             let who = ensure_signed(origin)?;
             ensure!(Self::account_is_admin(&who), Error::<T>::NotAuthorized);
@@ -278,10 +301,9 @@ decl_module! {
                 Ok(res)
             })
         }
-
     }
 }
-// Module allows the pallet's dispatchable use  common functionality
+// Module allows  use  common functionality by dispatchables
 impl<T: Trait> Module<T> {
     // Implement module function.
     // Public functions can be called from other runtime modules.

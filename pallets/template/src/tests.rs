@@ -11,9 +11,10 @@ use frame_support::{
 // type Module = super::Module<Test>;
 type Timestamp = pallet_timestamp::Module<Test>;
 type System = frame_system::Module<Test>;
+type Balances = pallet_balances::Module<Test>;
 type Error = super::Error<Test>;
 
-fn events() -> Vec<Event> {
+fn events() -> Vec<TestEvent> {
     let evt = System::events()
         .into_iter()
         .map(|evt| evt.event)
@@ -22,7 +23,7 @@ fn events() -> Vec<Event> {
     evt
 }
 #[allow(dead_code)]
-fn last_event() -> Event {
+fn last_event() -> TestEvent {
     System::events().pop().expect("Event expected").event
 }
 
@@ -70,7 +71,7 @@ fn it_works_for_default_value() {
         assert_ok!(TemplateModule::do_something(Origin::signed(1), 42));
         assert_eq!(
             events(),
-            vec![Event::template(super::RawEvent::SomethingStored(42, 1))]
+            vec![TestEvent::template(super::RawEvent::SomethingStored(42, 1))]
         );
 
         // Read pallet storage and assert an expected result.
@@ -146,37 +147,28 @@ fn it_try_create_by_user() {
 fn it_balance() {
     new_test_ext().execute_with(|| {
         //total_issuance
-        assert_eq!(<pallet_balances::Module<Test>>::total_issuance(), 100000);
-        assert_eq!(<pallet_balances::Module<Test>>::free_balance(1), 100000);
-        assert_eq!(<pallet_balances::Module<Test>>::free_balance(2), 0);
+        assert_eq!(Balances::total_issuance(), 100000);
+        assert_eq!(Balances::free_balance(1), 100000);
+        assert_eq!(Balances::free_balance(2), 0);
         assert_ok!(TemplateModule::account_add(
             Origin::signed(1),
             3,
             super::USER_ROLE
         ));
 
-        assert_ok!(<pallet_balances::Module<Test>>::transfer(
-            Origin::signed(1),
-            2,
-            50000
-        ));
+        assert_ok!(Balances::transfer(Origin::signed(1), 2, 50000));
 
-        assert_eq!(<pallet_balances::Module<Test>>::free_balance(1), 50000);
-        assert_eq!(<pallet_balances::Module<Test>>::free_balance(2), 50000);
-        assert_eq!(<pallet_balances::Module<Test>>::total_issuance(), 100000);
-        assert_ok!(<pallet_balances::Module<Test>>::transfer(
-            Origin::signed(1),
-            2,
-            49990
-        ));
+        assert_eq!(Balances::free_balance(1), 50000);
+        assert_eq!(Balances::free_balance(2), 50000);
+        assert_eq!(Balances::total_issuance(), 100000);
+        assert_ok!(Balances::transfer(Origin::signed(1), 2, 49990));
         // Account 1 has been removed from balances and dust remaining 10
-        assert_eq!(<pallet_balances::Module<Test>>::total_issuance(), 99990);
+        assert_eq!(Balances::total_issuance(), 99990);
     });
 }
 
 #[test]
 fn it_dispatchable_weight() {
-    type DbWeight = <Test as frame_system::Trait>::DbWeight;
     // pre-dispatch weights
     fn assert_dispatch(call: crate::Call<Test>, weight: Weight, pay: Pays) -> DispatchInfo {
         let dispatch_info = call.get_dispatch_info();
@@ -186,10 +178,14 @@ fn it_dispatchable_weight() {
         dispatch_info
     }
     let call = crate::Call::<Test>::account_add(3, 1);
-    assert_dispatch(call, 10_000_000 + DbWeight::get().writes(1), Pays::Yes);
+    assert_dispatch(call, <() as super::WeightInfo>::account_add(), Pays::Yes);
 
     let call = crate::Call::<Test>::update_something(3);
-    assert_dispatch(call, 10_000_000, Pays::Yes);
+    assert_dispatch(
+        call,
+        <() as super::WeightInfo>::update_something(),
+        Pays::Yes,
+    );
 
     // post-dispatch weights
     fn assert_call(
@@ -211,16 +207,26 @@ fn it_dispatchable_weight() {
 
     new_test_ext().execute_with(|| {
         let call = crate::Call::<Test>::update_something(300);
-        assert_ok!(assert_call(Origin::signed(1), call, 10000000, Pays::Yes));
+        assert_ok!(assert_call(
+            Origin::signed(1),
+            call,
+            <() as super::WeightInfo>::update_something(),
+            Pays::Yes
+        ));
 
         let call = crate::Call::<Test>::update_something(100);
-        assert_ok!(assert_call(Origin::signed(1), call, 10000000, Pays::No));
+        assert_ok!(assert_call(
+            Origin::signed(1),
+            call,
+            <() as super::WeightInfo>::update_something(),
+            Pays::No
+        ));
 
         let call = crate::Call::<Test>::account_add(3, 1);
         assert_ok!(assert_call(
             Origin::signed(1),
             call,
-            10000000 + DbWeight::get().writes(1),
+            <() as super::WeightInfo>::account_add(),
             Pays::Yes
         ));
 
@@ -228,13 +234,13 @@ fn it_dispatchable_weight() {
         assert_ok!(assert_call(
             Origin::signed(1),
             call,
-            10000000 + DbWeight::get().reads_writes(1, 1),
+            <() as super::WeightInfo>::account_disable(),
             Pays::Yes
         ));
 
         let call = crate::Call::<Test>::update_something(300);
         assert_noop!(
-            assert_call(Origin::signed(2), call, 10000000, Pays::Yes),
+            assert_call(Origin::signed(2), call, 0, Pays::Yes),
             Error::NotAuthorized
         );
     });

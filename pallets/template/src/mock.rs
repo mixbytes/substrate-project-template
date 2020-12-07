@@ -22,7 +22,7 @@ mod balance {
 }
 
 impl_outer_event! {
-    pub enum Event for Test {
+    pub enum TestEvent for Test {
         system<T>,
         template<T>,
         balance<T>,
@@ -55,7 +55,7 @@ impl system::Trait for Test {
     type AccountId = u64;
     type Lookup = IdentityLookup<Self::AccountId>;
     type Header = Header;
-    type Event = Event;
+    type Event = TestEvent;
     type BlockHashCount = BlockHashCount;
     type MaximumBlockWeight = MaximumBlockWeight;
     type DbWeight = RocksDbWeight;
@@ -89,10 +89,31 @@ parameter_types! {
     pub const AdminRole: u8 = super::ADMIN_ROLE;
 }
 
+struct WeightInfo;
+impl crate::WeightInfo for WeightInfo {
+    fn update_something() -> Weight {
+        <() as crate::WeightInfo>::update_something()
+    }
+    // Add balances::transfer weight to default one
+    fn account_transfer_and_lock() -> Weight {
+        <() as crate::WeightInfo>::account_transfer_and_lock()
+            .saturating_add(<() as pallet_balances::WeightInfo>::transfer())
+    }
+
+    fn account_disable() -> Weight {
+        <() as crate::WeightInfo>::account_disable()
+    }
+    fn account_add() -> Weight {
+        <() as crate::WeightInfo>::account_add()
+    }
+}
+
 impl Trait for Test {
-    type Event = Event;
+    type Event = TestEvent;
     type AdminRole = AdminRole;
     type AccountRole = u8;
+    type Currency = pallet_balances::Module<Self>;
+    type WeightInfo = ();
 }
 
 parameter_types! {
@@ -102,7 +123,7 @@ parameter_types! {
 
 impl pallet_balances::Trait for Test {
     type Balance = Balance;
-    type Event = Event;
+    type Event = TestEvent;
     type DustRemoval = ();
     type ExistentialDeposit = ExistentialDeposit;
     type AccountStore = System;
@@ -131,7 +152,7 @@ static INITIAL: [(
     <Test as super::Trait>::AccountRole,
 ); 1] = [(1, super::ADMIN_ROLE)];
 
-static INITIAL_BALANCE: <Test as pallet_balances::Trait>::Balance = 100000;
+static INITIAL_BALANCE: super::BalanceOf<Test> = 100000;
 
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
