@@ -15,9 +15,9 @@ version 2.0.  To build the project it requires rust nightly-2020-10-05 and wasm3
 2. replace `TemplateModule` into your own module name
 
     pallet/template/src/lib.rs,
-	    p.76
+	    p.106
 	pallet/template/src/mock.rs
-	    p.109
+	    p.127
 
 	pallet/template/src/test.rs
 
@@ -25,7 +25,7 @@ version 2.0.  To build the project it requires rust nightly-2020-10-05 and wasm3
 	    p.3, p.165
 
 	runtime/src/lib.rs
-		p.295
+		p.298
 
 	replace `pallet_template` in
 	  node/src/chain_spec.rs p.165
