@@ -68,7 +68,7 @@ impl system::Trait for Test {
     type PalletInfo = ();
     type AccountData = pallet_balances::AccountData<Balance>;
     type OnNewAccount = ();
-    type OnKilledAccount = ();
+    type OnKilledAccount = TemplateModule;
     type SystemWeightInfo = ();
 }
 
