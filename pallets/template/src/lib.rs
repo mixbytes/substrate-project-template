@@ -11,7 +11,7 @@ use frame_support::{
     },
     traits::{
         Currency, ExistenceRequirement::AllowDeath, Get, LockIdentifier, LockableCurrency,
-        WithdrawReason, WithdrawReasons,
+        OnKilledAccount, WithdrawReason, WithdrawReasons,
     },
     weights::{DispatchClass, Pays, Weight},
     Parameter,
@@ -310,5 +310,11 @@ impl<T: Trait> Module<T> {
     /// Check if an account has ADMIN role
     pub fn account_is_admin(acc: &T::AccountId) -> bool {
         AccountRegistry::<T>::get(acc).is_admin()
+    }
+}
+
+impl<T: Trait> OnKilledAccount<T::AccountId> for Module<T> {
+    fn on_killed_account(who: &T::AccountId) {
+        AccountRegistry::<T>::remove(&who);
     }
 }

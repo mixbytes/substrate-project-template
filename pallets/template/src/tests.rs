@@ -14,6 +14,7 @@ type System = frame_system::Module<Test>;
 type Balances = pallet_balances::Module<Test>;
 type Error = super::Error<Test>;
 
+// get last events and reset
 fn events() -> Vec<TestEvent> {
     let evt = System::events()
         .into_iter()
@@ -115,6 +116,7 @@ fn it_disable_account() {
             super::USER_ROLE
         ));
         assert_ok!(TemplateModule::account_disable(Origin::signed(1), 2));
+        assert!(!TemplateModule::account_registry(2).is_enable());
     });
 }
 
@@ -125,6 +127,7 @@ fn it_try_disable_themself() {
             TemplateModule::account_disable(Origin::signed(1), 1),
             Error::InvalidAction
         );
+        assert!(TemplateModule::account_registry(1).is_enable());
     });
 }
 
@@ -139,6 +142,45 @@ fn it_try_create_by_user() {
         assert_noop!(
             TemplateModule::account_add(Origin::signed(2), 3, super::USER_ROLE),
             Error::NotAuthorized
+        );
+    });
+}
+
+#[test]
+fn it_account_reaped() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Balances::transfer(Origin::signed(1), 2, 10000));
+        assert_ok!(TemplateModule::account_add(
+            Origin::signed(1),
+            2,
+            super::USER_ROLE
+        ));
+
+        assert!(TemplateModule::account_registry(2).is_enable());
+        assert_ok!(Balances::transfer(Origin::signed(2), 3, 10000));
+        assert!(!TemplateModule::account_registry(2).is_enable());
+    });
+}
+
+#[test]
+fn it_lock_balance() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(TemplateModule::account_transfer_and_lock(
+            Origin::signed(1),
+            2,
+            10000
+        ));
+        assert_ok!(TemplateModule::account_add(
+            Origin::signed(1),
+            2,
+            super::USER_ROLE
+        ));
+
+        assert!(TemplateModule::account_registry(2).is_enable());
+        assert_eq!(Balances::free_balance(2), 10000);
+        assert_noop!(
+            Balances::transfer(Origin::signed(2), 3, 5000),
+            pallet_balances::Error::<Test, _>::LiquidityRestrictions
         );
     });
 }
